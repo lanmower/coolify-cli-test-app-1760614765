@@ -5,3 +5,279 @@
 node_modules/
 *.log
 .DS_Store
+
+# Private and sensitive data
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+secrets/
+credentials/
+config/secrets.json
+config/private.json
+
+# Large files and binaries
+*.tar.gz
+*.zip
+*.rar
+*.7z
+*.dmg
+*.iso
+*.img
+*.exe
+*.msi
+*.deb
+*.rpm
+*.pkg
+*.bin
+*.dat
+*.db
+*.sqlite
+*.sqlite3
+*.dump
+
+# Logs and runtime data
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+pm2.logs/
+.pnpm-debug.log*
+
+# Coverage directory used by tools like istanbul
+coverage/
+*.lcov
+
+# nyc test coverage
+.nyc_output
+
+# Grunt intermediate storage (https://gruntjs.com/creating-plugins#storing-task-files)
+.grunt
+
+# Bower dependency directory (https://bower.io/)
+bower_components
+
+# node-waf configuration
+.lock-wscript
+
+# Compiled binary addons (https://nodejs.org/api/addons.html)
+build/Release
+
+# Dependency directories
+jspm_packages/
+
+# TypeScript cache
+*.tsbuildinfo
+
+# Optional npm cache directory
+.npm
+
+# Optional eslint cache
+.eslintcache
+
+# Microbundle cache
+.rpt2_cache/
+.rts2_cache_cjs/
+.rts2_cache_es/
+.rts2_cache_umd/
+
+# Optional REPL history
+.node_repl_history
+
+# Output of 'npm pack'
+*.tgz
+
+# Yarn Integrity file
+.yarn-integrity
+
+# dotenv environment variables file
+.env.test
+
+# parcel-bundler cache (https://parceljs.org/)
+.cache
+.parcel-cache
+
+# Next.js build output
+.next
+
+# Nuxt.js build / generate output
+.nuxt
+dist
+
+# Gatsby files
+.cache/
+public
+
+# Storybook build outputs
+.out
+.storybook-out
+
+# Temporary folders
+tmp/
+temp/
+.tmp/
+*.tmp
+*.temp
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+Desktop.ini
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Playwright test artifacts
+test-results/
+playwright-report/
+*.trace
+playwright/.cache/
+test-results.xml
+
+# MCP and sandbox artifacts
+.sandboxbox-*/
+*.sandboxbox
+.mcp-cache/
+.vexify.db
+
+# Docker and container files
+docker-compose.override.yml
+.dockerignore
+docker-compose.override.yml
+
+# Large media files
+*.mp4
+*.avi
+*.mov
+*.wmv
+*.flv
+*.webm
+*.mkv
+*.mp3
+*.wav
+*.flac
+*.aac
+*.ogg
+
+# Large data files
+*.csv
+*.json
+*.xml
+*.yaml
+*.yml
+# Only exclude if larger than 1MB
+*.large
+
+# Backup files
+*.bak
+*.backup
+*.old
+*.orig
+*.rej
+
+# Lock files (keep package-lock.json but exclude others)
+yarn.lock
+pnpm-lock.yaml
+
+# Build artifacts
+build/
+dist/
+out/
+target/
+*.tgz
+*.tar.gz
+
+# Testing
+coverage/
+.nyc_output/
+junit.xml
+test-results/
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+*.dump
+
+# Session files
+*.session
+*.cookie
+sessions/
+
+# Private SSH keys and certificates
+id_rsa*
+*.pem
+*.key
+*.crt
+*.cert
+*.p12
+*.pfx
+
+# Configuration files with secrets
+config/secrets.json
+config/local.json
+config/production.json
+secrets/
+.secrets/
+
+# Local development
+.local/
+local/
+dev/
+development/
+
+# Monitoring and analytics
+*.analytics
+*.metrics
+monitoring/
+analytics/
+
+# Cache directories
+.cache/
+cache/
+.sass-cache/
+.eslintcache/
+
+# Temporary and generated files
+*.tmp
+*.temp
+.tmp/
+temp/
+*.generated
+*.gen
+
+# Private scripts and tools
+scripts/private/
+tools/private/
+.private/
+
+# Documentation build
+docs/_build/
+docs/build/
+*.mdx
+
+# Package manager files (keep package-lock.json for reproducibility)
+yarn.lock
+pnpm-lock.yaml
+
+# Large git files
+*.git.*
+.gitattributes
+.gitmodules
