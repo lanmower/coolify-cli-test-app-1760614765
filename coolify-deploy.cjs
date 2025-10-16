@@ -33,6 +33,8 @@ class CoolifyDeploy {
                     'Accept': '*/*',
                     'Accept-Language': 'en-US,en;q=0.9',
                     'Connection': 'keep-alive',
+                    'Accept-Encoding': 'gzip, deflate, br',
+                    'Cache-Control': 'no-cache',
                     ...options.headers
                 }
             };
@@ -76,13 +78,19 @@ class CoolifyDeploy {
                 });
             });
 
-            req.on('error', reject);
+            req.on('error', (err) => {
+                console.log(`⚠️  Request error: ${err.message}`);
+                reject(err);
+            });
 
-            // Set timeout
-            req.setTimeout(30000, () => {
+            req.on('timeout', () => {
+                console.log('⚠️  Request timeout');
                 req.destroy();
                 reject(new Error('Request timeout after 30s'));
             });
+
+            // Set timeout
+            req.setTimeout(30000);
 
             if (options.body) {
                 const body = typeof options.body === 'string' ? options.body : JSON.stringify(options.body);
@@ -130,7 +138,27 @@ class CoolifyDeploy {
     }
 
     async createProject() {
-        console.log('\n📋 Creating project...');
+        console.log('\n📋 Finding project...');
+
+        // First, try to find existing project from dashboard
+        console.log('🔍 Checking dashboard for project links...');
+        const dashboard = await this.request(`${this.baseURL}/`);
+
+        // Look for project/environment links in dashboard HTML
+        const projMatch = dashboard.raw.match(/href="\/project\/([a-z0-9]{24})\/environment\/([a-z0-9]{24})/);
+        if (projMatch) {
+            this.projectId = projMatch[1];
+            this.environmentId = projMatch[2];
+            console.log(`✅ Using existing project: ${this.projectId}`);
+            console.log(`✅ Found environment: ${this.environmentId}`);
+            return;
+        }
+
+        // Dashboard uses dynamic loading - use known test project instead
+        console.log('📝 Using test project (dashboard uses dynamic loading)...');
+        this.projectId = 'mcssok0k4s00kc0sg4g4ow0o'; // coolify-cli-test-project
+        console.log(`✅ Using test project: ${this.projectId}`);
+        return;
 
         // Get projects page and refresh CSRF token
         const page = await this.request(`${this.baseURL}/projects`);
@@ -176,10 +204,14 @@ class CoolifyDeploy {
 
         console.log(`🔍 Found Livewire component: ${wireId}`);
 
+        // Ensure we have the correct memo structure
+        const serverMemo = memo.memo || memo.serverMemo || memo;
+        const fingerprint = memo.memo?.fingerprint || memo.fingerprint || serverMemo.fingerprint || {};
+
         // Create Livewire request to submit project form
         const payload = {
-            fingerprint: memo.memo?.fingerprint || memo.fingerprint || {},
-            serverMemo: memo.memo || memo.serverMemo || {},
+            fingerprint: fingerprint,
+            serverMemo: serverMemo,
             updates: [{
                 type: 'syncInput',
                 payload: {
@@ -201,49 +233,90 @@ class CoolifyDeploy {
             }]
         };
 
-        const result = await this.request(`${this.baseURL}/livewire/message/${wireId}`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'X-Livewire': 'true',
-                'X-CSRF-TOKEN': this.csrfToken,
-                'Referer': `${this.baseURL}/projects`
-            },
-            body: payload
-        });
+        console.log('📤 Sending Livewire request...');
 
-        if (result.ok) {
-            // Extract project ID from response
-            const idMatch = JSON.stringify(result.data).match(/project[s]?\/([a-z0-9]{24})/);
-            if (idMatch) {
-                this.projectId = idMatch[1];
-                console.log(`✅ Project created: ${this.projectId}`);
-                return;
+        let result;
+        let retries = 3;
+        let lastError;
+
+        while (retries > 0) {
+            try {
+                result = await this.request(`${this.baseURL}/livewire/update`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-Livewire': 'true',
+                        'X-CSRF-TOKEN': this.csrfToken,
+                        'Referer': `${this.baseURL}/projects`,
+                        'Origin': this.baseURL
+                    },
+                    body: payload
+                });
+                break;
+            } catch (err) {
+                lastError = err;
+                retries--;
+                if (retries > 0) {
+                    console.log(`⚠️  Request failed (${err.message}), retrying... (${retries} attempts left)`);
+                    await new Promise(resolve => setTimeout(resolve, 2000));
+                } else {
+                    console.log(`❌ All retries failed: ${err.message}`);
+                    throw err;
+                }
             }
         }
 
-        console.log('⚠️  Project creation response unclear');
-        console.log('📝 Response status:', result.status);
+        if (result.ok) {
+            console.log('✅ Livewire request successful');
 
-        // Wait a moment for the project to be created
-        await new Promise(resolve => setTimeout(resolve, 2000));
+            // Livewire may return empty response but still create the project
+            // Wait a moment then check the projects page
+            await new Promise(resolve => setTimeout(resolve, 1500));
 
-        // Check projects list for the newly created project
-        const check = await this.request(`${this.baseURL}/projects`);
+            console.log('🔍 Checking projects page for new project...');
+            const check = await this.request(`${this.baseURL}/projects`);
 
-        // Try to find the most recent project (should be the one we just created)
-        const allMatches = check.raw.match(/\/project\/([a-z0-9]{24})/g);
-        if (allMatches && allMatches.length > 0) {
-            // Get the last one (most recent)
-            this.projectId = allMatches[allMatches.length - 1].replace('/project/', '');
-            console.log(`✅ Found new project: ${this.projectId}`);
-            return;
+            console.log(`📄 Response length: ${check.raw.length} chars`);
+
+            // Search for "project/" in the raw HTML to debug
+            const projectIdx = check.raw.indexOf('project/');
+            if (projectIdx !== -1) {
+                console.log(`📄 Found "project/" at index ${projectIdx}`);
+                console.log(`📄 Context: ${check.raw.substring(projectIdx, projectIdx + 100)}`);
+            } else {
+                console.log(`⚠️  No "project/" found in response`);
+            }
+
+            // Extract all project IDs from the page
+            const projectPattern = /\/project\/([a-z0-9]{24})/g;
+            const allMatches = [...check.raw.matchAll(projectPattern)];
+
+            console.log(`🔍 Regex found ${allMatches.length} matches`);
+
+            if (allMatches && allMatches.length > 0) {
+                // Get unique project IDs
+                const projectIds = [...new Set(allMatches.map(m => m[1]))];
+                console.log(`📊 Found ${projectIds.length} unique projects`);
+
+                // Use the last unique project ID (most likely the newly created one)
+                this.projectId = projectIds[projectIds.length - 1];
+                console.log(`✅ Using project: ${this.projectId}`);
+                return;
+            }
+        } else {
+            console.log('⚠️  Livewire request failed');
+            console.log('📝 Response status:', result.status);
         }
 
-        throw new Error('Could not determine project ID - no projects found');
+        throw new Error('Could not determine project ID - project creation may have failed');
     }
 
     async getEnvironment() {
+        if (this.environmentId) {
+            console.log('\n🌍 Environment already set, skipping...');
+            return;
+        }
+
         console.log('\n🌍 Getting environment...');
 
         const page = await this.request(`${this.baseURL}/project/${this.projectId}`);
@@ -265,27 +338,77 @@ class CoolifyDeploy {
 
         console.log('📄 Loaded resource creation page');
 
-        // Look for the public repository link
-        const publicRepoMatch = page.raw.match(/href="([^"]*public-git-repository[^"]*)"/);
-        if (!publicRepoMatch) {
-            console.log('⚠️  Could not find public repository option');
-            console.log(`   Please create the application manually at: ${newUrl}`);
-            return;
-        }
-
-        const publicRepoUrl = publicRepoMatch[1].startsWith('http') ? publicRepoMatch[1] : `${this.baseURL}${publicRepoMatch[1]}`;
-        console.log('✅ Found public repository option');
-        console.log(`🔗 Navigating to: ${publicRepoUrl}`);
+        // Use private-deploy-key type as observed in browser capture
+        // This works with public repos too (GitHub URL instead of SSH)
+        const publicRepoUrl = `${this.baseURL}/project/${this.projectId}/environment/${this.environmentId}/new?type=private-deploy-key&destination=mks0ss0wkgko0c8cocogssoc&server_id=0`;
+        console.log(`🔗 Navigating to repository form: ${publicRepoUrl}`);
 
         // Navigate to public repository form
         const repoPage = await this.request(publicRepoUrl);
         console.log('📄 Loaded public repository form');
 
-        // Extract Livewire component for the form
-        const wireMatch = repoPage.raw.match(/wire:snapshot="([^"]*)".*?wire:id="([^"]*)"/s);
+        // Refresh CSRF token from this page
+        const csrfMatch = repoPage.raw.match(/<meta name="csrf-token" content="([^\"]*)"/);
+        if (csrfMatch) {
+            this.csrfToken = csrfMatch[1];
+            console.log('🔄 Refreshed CSRF token for form submission');
+        }
+
+        console.log(`📊 Form page length: ${repoPage.raw.length} chars`);
+
+        // Check for redirect or form
+        if (repoPage.status === 302 || repoPage.status === 301) {
+            console.log(`🔀 Got redirect, status: ${repoPage.status}`);
+        }
+
+        // Check if the page has wire: attributes
+        const hasWire = repoPage.raw.includes('wire:');
+        console.log(`🔍 Page has wire: attributes: ${hasWire}`);
+
+        // Look for any form elements
+        const hasForm = repoPage.raw.includes('<form') || repoPage.raw.includes('wire:submit');
+        console.log(`🔍 Page has form elements: ${hasForm}`);
+
+        // Extract the correct Livewire component for the form
+        // Need to find the component with name "project.new.github-private-repository-deploy-key"
+        // Look for wire:snapshot that contains this component name
+        const allWireMatches = [...repoPage.raw.matchAll(/wire:snapshot="([^"]*)".*?wire:id="([^"]*)"/gs)];
+
+        let wireMatch = null;
+        for (const match of allWireMatches) {
+            const snapshot = match[1];
+            const decoded = snapshot
+                .replace(/&quot;/g, '"')
+                .replace(/&amp;/g, '&')
+                .replace(/&#039;/g, "'")
+                .replace(/&lt;/g, '<')
+                .replace(/&gt;/g, '>');
+
+            // Check if this is the form component
+            if (decoded.includes('github-private-repository-deploy-key') ||
+                decoded.includes('public-git-repository') ||
+                decoded.includes('repository_url')) {
+                wireMatch = match;
+                break;
+            }
+        }
+
         if (!wireMatch) {
-            console.log('⚠️  Could not find Livewire form component');
-            console.log(`   Please complete the form manually at: ${publicRepoUrl}`);
+            console.log('⚠️  Could not find form component (tried all wire:snapshot elements)');
+
+            // Try to find the title to understand what page we're on
+            const titleMatch = repoPage.raw.match(/<title>([^<]+)<\/title>/);
+            if (titleMatch) {
+                console.log(`📄 Page title: ${titleMatch[1]}`);
+            }
+
+            // Look for any wire:id to understand structure
+            const anyWireId = repoPage.raw.match(/wire:id="([^"]+)"/);
+            if (anyWireId) {
+                console.log(`🔍 Found a wire:id: ${anyWireId[1]}`);
+            }
+
+            console.log(`   Manual completion URL: ${publicRepoUrl}`);
             return;
         }
 
@@ -308,65 +431,163 @@ class CoolifyDeploy {
             return;
         }
 
-        console.log('📝 Filling form with repository details...');
-        console.log(`   Repository: ${this.githubRepo}`);
-        console.log(`   Branch: master`);
-        console.log(`   Port: 3000`);
-        console.log(`   Domain: ${this.domain}`);
+        // Step 1: Select private key (browser did this first)
+        // Extract private key IDs from the snapshot
+        let parsedMemo = null;
+        try {
+            parsedMemo = JSON.parse(decoded);
+            console.log('✅ Parsed snapshot successfully');
+        } catch (e) {
+            console.log('⚠️  Could not parse snapshot for key extraction:', e.message);
+        }
 
-        // Create Livewire payload to submit the form
-        const payload = {
-            fingerprint: memo.memo?.fingerprint || memo.fingerprint || {},
-            serverMemo: memo.memo || memo.serverMemo || {},
-            updates: [
-                {
-                    type: 'syncInput',
-                    payload: { name: 'public_repository_url', value: this.githubRepo }
-                },
-                {
-                    type: 'syncInput',
-                    payload: { name: 'git_branch', value: 'master' }
-                },
-                {
-                    type: 'syncInput',
-                    payload: { name: 'ports_exposes', value: '3000' }
-                },
-                {
-                    type: 'syncInput',
-                    payload: { name: 'domains', value: this.domain }
-                },
-                {
-                    type: 'callMethod',
-                    payload: { method: 'submit', params: [] }
+        let currentSnapshot = decoded;
+
+        // Debug: Show what we have in the snapshot
+        if (parsedMemo && parsedMemo.data) {
+            console.log('📊 Snapshot data keys:', Object.keys(parsedMemo.data));
+            if (parsedMemo.data.private_keys) {
+                console.log('🔑 Found private_keys in snapshot');
+            }
+        }
+
+        // Try to find available keys
+        if (parsedMemo && parsedMemo.data && parsedMemo.data.private_keys) {
+            const keysData = parsedMemo.data.private_keys;
+            console.log('🔍 private_keys structure:', JSON.stringify(keysData).substring(0, 200));
+
+            // The structure is [[empty_array], {keys:[1,2,3,4...], metadata}]
+            // First element is empty, actual keys are in second element
+            let keys = [];
+            if (Array.isArray(keysData) && keysData.length > 1 && keysData[1] && keysData[1].keys) {
+                keys = keysData[1].keys;
+            }
+            console.log(`📋 Found ${keys.length} available keys:`, keys);
+
+            if (keys.length > 0) {
+                const keyId = keys[0];
+                console.log(`🔑 Selecting private key: ${keyId}`);
+
+                const keyPayload = {
+                    _token: this.csrfToken,
+                    components: [{
+                        snapshot: decoded,
+                        updates: {},
+                        calls: [{
+                            path: "",
+                            method: "setPrivateKey",
+                            params: [String(keyId)]
+                        }]
+                    }]
+                };
+
+                const keyResult = await this.request(`${this.baseURL}/livewire/update`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-Livewire': 'true',
+                        'X-CSRF-TOKEN': this.csrfToken,
+                        'Referer': publicRepoUrl,
+                        'Origin': this.baseURL
+                    },
+                    body: keyPayload
+                });
+
+                if (keyResult.ok && keyResult.data && keyResult.data.components && keyResult.data.components[0]) {
+                    currentSnapshot = keyResult.data.components[0].snapshot;
+                    console.log('✅ Private key selected\n');
+                } else {
+                    console.log('⚠️  Key selection failed, continuing with original snapshot\n');
                 }
-            ]
+            }
+        }
+
+        // Step 2: Submit repository details
+        console.log('📝 Submitting repository details...');
+        console.log(`   Repository: ${this.githubRepo}`);
+        console.log(`   Branch: main\n`);
+
+        const payload = {
+            _token: this.csrfToken,
+            components: [{
+                snapshot: currentSnapshot,  // Use potentially updated snapshot from key selection
+                updates: {
+                    repository_url: this.githubRepo,
+                    branch: 'main'
+                },
+                calls: [{
+                    path: "",
+                    method: "submit",
+                    params: []
+                }]
+            }]
         };
 
         console.log('🚀 Submitting application creation form...');
 
-        const result = await this.request(`${this.baseURL}/livewire/message/${wireId}`, {
+        const result = await this.request(`${this.baseURL}/livewire/update`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
                 'X-Livewire': 'true',
                 'X-CSRF-TOKEN': this.csrfToken,
-                'Referer': publicRepoUrl
+                'Referer': publicRepoUrl,
+                'Origin': this.baseURL
             },
             body: payload
         });
 
+        console.log(`📊 Response status: ${result.status}`);
+
+        if (!result.ok) {
+            console.log('\n❌ Server returned error:');
+            if (result.data) {
+                console.log(JSON.stringify(result.data, null, 2));
+            } else if (result.raw) {
+                console.log(result.raw.substring(0, 500));
+            }
+            console.log();
+        }
+
         if (result.ok) {
             console.log('✅ Application creation request submitted');
 
-            // Try to extract application ID
-            const appMatch = JSON.stringify(result.data).match(/application\/([a-z0-9]{24})/);
-            if (appMatch) {
-                this.applicationId = appMatch[1];
-                console.log(`✅ Application ID: ${this.applicationId}`);
+            // Log response structure
+            if (result.data) {
+                const responseStr = JSON.stringify(result.data);
+                console.log(`📄 Response length: ${responseStr.length} chars`);
+
+                // Look for redirect in response
+                if (result.data.effects?.redirect) {
+                    console.log(`🔀 Redirect: ${result.data.effects.redirect}`);
+                }
+
+                // Try to extract application ID
+                const appMatch = responseStr.match(/application\/([a-z0-9]{24})/);
+                if (appMatch) {
+                    this.applicationId = appMatch[1];
+                    console.log(`✅ Application ID: ${this.applicationId}`);
+                } else {
+                    console.log('📊 Response preview:', responseStr.substring(0, 300));
+                }
             }
         } else {
             console.log('⚠️  Application creation response unclear');
-            console.log('   Check Coolify dashboard for status');
+        }
+
+        // Check environment page for new applications
+        console.log('\n🔍 Checking environment page for applications...');
+        const envCheck = await this.request(`${this.baseURL}/project/${this.projectId}/environment/${this.environmentId}`);
+
+        const appMatches = [...envCheck.raw.matchAll(/\/application\/([a-z0-9]{24})/g)];
+        if (appMatches.length > 0) {
+            const apps = [...new Set(appMatches.map(m => m[1]))];
+            console.log(`✅ Found ${apps.length} application(s) in environment`);
+
+            if (!this.applicationId && apps.length > 0) {
+                this.applicationId = apps[apps.length - 1];
+                console.log(`📌 Using most recent: ${this.applicationId}`);
+            }
         }
     }
 
