@@ -103,8 +103,11 @@ class CoolifyDeploy {
     async login() {
         console.log('🔐 Logging into Coolify...');
 
-        if (!process.env.U || !process.env.P) {
-            throw new Error('Missing credentials. Set U and P environment variables.');
+        const email = process.env.COOLIFY_USERNAME || process.env.U;
+        const password = process.env.COOLIFY_PASSWORD || process.env.P;
+
+        if (!email || !password) {
+            throw new Error('Missing credentials. Set COOLIFY_USERNAME and COOLIFY_PASSWORD environment variables.');
         }
 
         // Get CSRF token
@@ -115,8 +118,8 @@ class CoolifyDeploy {
 
         // Login
         const form = new URLSearchParams({
-            email: process.env.U,
-            password: process.env.P,
+            email: email,
+            password: password,
             _token: this.csrfToken
         });
 

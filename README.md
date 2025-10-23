@@ -28,8 +28,8 @@ chmod +x deploy.js
 
 ```bash
 # Set environment variables
-export U="your-coolify-username"
-export P="your-coolify-password"
+export COOLIFY_USERNAME="your-coolify-username"
+export COOLIFY_PASSWORD="your-coolify-password"
 
 # Run deployment
 node deploy.js
@@ -40,8 +40,8 @@ node deploy.js --repo=https://github.com/user/repo --domain=domain.example.com
 
 ## Environment Variables
 
-- `U` or `COOLIFY_USERNAME`: Coolify username
-- `P` or `COOLIFY_PASSWORD`: Coolify password
+- `COOLIFY_USERNAME`: Coolify username (or `U` for backward compatibility)
+- `COOLIFY_PASSWORD`: Coolify password (or `P` for backward compatibility)
 
 ## What It Does
 
