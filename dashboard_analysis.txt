@@ -1,0 +1,12 @@
+DASHBOARD ANALYSIS
+==================================================
+
+Deployment sections found: 0
+Navigation links: 0
+Deploy buttons: 0
+Livewire components: 0
+API endpoints: 0
+
+DEPLOYMENT SECTIONS:
+
+NAVIGATION LINKS:
