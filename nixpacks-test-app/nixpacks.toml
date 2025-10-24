@@ -1,8 +1,12 @@
+# Nixpacks configuration
 [phases.setup]
 nixPkgs = ["nodejs_20", "npm"]
 
 [phases.build]
 cmds = ["npm install"]
+
+[phases.start]
+cmds = ["npm start"]
 
 [start]
 cmd = "npm start"
