@@ -1,15 +1,8 @@
 [phases.setup]
-nixPkgs = ["nodejs_18", "npm"]
+nixPkgs = ["nodejs_20", "npm"]
 
 [phases.build]
 cmds = ["npm install"]
 
 [start]
 cmd = "npm start"
-
-[variables]
-NODE_ENV = "production"
-PORT = "3000"
-
-[phases.install]
-onlyIncludes = ["package.json", "package-lock.json"]
